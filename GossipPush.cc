@@ -47,6 +47,10 @@ void GossipPush::initialize(int stage)
         ctrlMsg0 = new cMessage("controlMSG", IDLE);
         ctrlMsg1 = new cMessage("controlMSG2", IDLE);
         ctrlHello = new cMessage("controlHello", IDLE);
+
+        anotherSM = new StateMachine();
+        testing = buildTicker(string("testing everything"), 0.5 ,anotherSM, 57, this);
+        interpreter = new StateMachineInterpreter(testing);
     }
 }
 
@@ -61,6 +65,8 @@ void GossipPush::handleMessageWhenUp(cMessage *msg)
         switch (msg->getKind()) {
             case START:
                 processStart();
+                testing->reportMessage(TickAutomatonTypes::ACTIVATE);
+                interpreter->move();
                 break;
             case NEW_GOSSIP:
                 EV_TRACE << "Message Received\n";
@@ -293,6 +299,13 @@ void GossipPush::processStart()
         ctrlMsg0->setKind(NEW_GOSSIP);
         scheduleAt(simTime() +  HELLO_INTERVAL + intervalAmongNewMessages, ctrlMsg0);
     }
+}
+
+void GossipPush::registerListener(ITimeOut* listener, double afterElapsedTime)
+{
+        ITimeOutProducer::registerListener(listener, afterElapsedTime);
+        EV_TRACE << "Registering listener because we enter in the state of waiting for tick " << afterElapsedTime << "\n";
+
 }
 
 } //namespace

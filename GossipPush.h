@@ -27,6 +27,10 @@
 #include "inet/applications/base/ApplicationBase.h"
 #include "inet/transportlayer/contract/udp/UDPSocket.h"
 
+#include "TickAutomaton.h"
+#include "StateMachine.h"
+#include "StateMachineInterpreter.h"
+
 namespace inet {
 
 using std::map;
@@ -38,7 +42,7 @@ const double HELLO_INTERVAL = 0.6;
 /**
  * TODO - Generated class
  */
-class INET_API GossipPush : public ApplicationBase
+class INET_API GossipPush : public ApplicationBase, public ITimeOutProducer
 {
   protected:
 
@@ -84,6 +88,11 @@ class INET_API GossipPush : public ApplicationBase
     string myself;
     L3Address myAddress;
 
+    // a state machine
+    StateMachine* anotherSM;
+    StateMachine* testing;
+    StateMachineInterpreter* interpreter;
+
   protected:
 
     virtual int numInitStages() const override { return NUM_INIT_STAGES; }
@@ -97,6 +106,8 @@ class INET_API GossipPush : public ApplicationBase
     virtual bool handleNodeStart(IDoneCallback *doneCallback) override;
     virtual bool handleNodeShutdown(IDoneCallback *doneCallback) override;
     virtual void handleNodeCrash() override;
+
+    virtual void registerListener(ITimeOut* listener, double afterElapsedTime) override;
 
     virtual void processStart();
 
