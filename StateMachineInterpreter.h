@@ -15,7 +15,7 @@ namespace inet {
 class StateMachineInterpreter {
 protected:
     StateMachine* sm;
-    State& current;
+    State* current;
 public:
     StateMachineInterpreter(StateMachine* sm):sm(sm), current(sm->getInitialState()) {}
     virtual ~StateMachineInterpreter();

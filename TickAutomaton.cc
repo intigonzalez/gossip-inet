@@ -15,9 +15,9 @@ protected:
     MessageType msgId;
 public:
     NotifyTick(StateMachine* t, MessageType mi):target(t), msgId(mi) {}
-    virtual void enteringState(State& s, StateMachine* stateMachine) {
+    virtual void enteringState(State* s, StateMachine* stateMachine) {
         target->reportMessage(msgId);
-        stateMachine->reportMessage(TRUE);
+        stateMachine->reportMessage(MSG_TRUE);
     }
 };
 
@@ -34,13 +34,13 @@ public:
     }
 
 
-    virtual void enteringState(State& s, StateMachine* stateMachine) {
+    virtual void enteringState(State* s, StateMachine* stateMachine) {
         sm = stateMachine;
         top->registerListener(this, d);
     }
 
     virtual void timeOut() {
-        sm->reportMessage(TIME_OUT);
+        sm->reportMessage(MSG_TIME_OUT);
     }
 };
 
@@ -51,25 +51,35 @@ StateMachine* buildTicker(string name, double d, StateMachine* target, MessageTy
 
     // adding initial state
     StateActions* a = new NoActions();
-    State s0(string("initial"), a);
+    State* s0 = new State(string("initial"), a);
     sm->addState(s0);
 
     // adding middle state
     a = new ActivateTick(d, top);
-    State s1(string("middle"), a);
+    State* s1 = new State(string("middle"), a);
     sm->addState(s1);
 
     // adding last state
     a = new NotifyTick(target, msgId);
-    State s2(string("last"), a);
+    State* s2 = new State(string("last"), a);
     sm->addState(s2);
 
     // adding transitions
-    sm->addTransition(TRUE, s2, s1);
-    sm->addTransition(FALSE, s1, s2);
-    sm->addTransition(TIME_OUT, s1, s2);
-    sm->addTransition(ACTIVATE, s0, s1);
+    sm->addTransition(MSG_TRUE, s2, s1);
+    sm->addTransition(MSG_FALSE, s1, s2);
+    sm->addTransition(MSG_TIME_OUT, s1, s2);
+    sm->addTransition(MSG_ACTIVATE, s0, s1);
 
+    return sm;
+}
+
+StateMachine* buildDummyAutomaton(MessageType msgId)
+{
+    StateMachine* sm = new StateMachine();
+    StateActions* a = new LogActions(std::string("I received a message from a remote automaton"));
+    State* s0 = new State(string("initial"), a);
+    sm->addState(s0);
+    sm->addTransition(msgId, s0, s0);
     return sm;
 }
 

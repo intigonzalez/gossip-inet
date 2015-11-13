@@ -19,8 +19,8 @@ using std::string;
 using std::vector;
 
 enum TickAutomatonTypes {
-    ACTIVATE = 3,
-    TIME_OUT = 4
+    MSG_ACTIVATE = 3,
+    MSG_TIME_OUT = 4
 };
 
 /**
@@ -44,6 +44,8 @@ public:
 };
 
 StateMachine* buildTicker(string name, double d, StateMachine* target, MessageType msgId, ITimeOutProducer* top);
+
+StateMachine* buildDummyAutomaton(MessageType msgId);
 
 }
 

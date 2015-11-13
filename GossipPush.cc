@@ -34,6 +34,19 @@ enum ControlMessageTypes {
     SAY_HELLO
 };
 
+enum GossipProtocolMessages {
+    MSG_INITIALIZE = 57,
+    MSG_NEW_GOSSIP = 58,
+    MSG_EMPTY_MAILBOX = 59,
+    MSG_FULL_MAILBOX = 60,
+    MSG_GREET = 61,
+    MSG_HELLO = 62,
+    MSG_DATA = 63,
+    MSG_GOSSIP = 64
+};
+
+
+
 void GossipPush::initialize(int stage)
 {
     ApplicationBase::initialize(stage);
@@ -48,16 +61,41 @@ void GossipPush::initialize(int stage)
         ctrlMsg1 = new cMessage("controlMSG2", IDLE);
         ctrlHello = new cMessage("controlHello", IDLE);
 
-        anotherSM = new StateMachine();
-        testing = buildTicker(string("testing everything"), 0.5 ,anotherSM, 57, this);
-        interpreter = new StateMachineInterpreter(testing);
+        EV_TRACE << "Creating State Machines\n";
+        anotherSM = buildDummyAutomaton(MSG_GOSSIP);
+        sm_tick_gossip = buildTicker(string("testing everything"), 0.5, anotherSM, MSG_GOSSIP, this);
+        interpreters.push_back(new StateMachineInterpreter(anotherSM));
+        interpreters.push_back(new StateMachineInterpreter(sm_tick_gossip));
+        EV_TRACE << "State Machines have been created\n";
+    }
+}
+
+void GossipPush::newGossip() {
+    EV_TRACE << "Message Received\n";
+    if (isSource) {
+        /* let's create the infection */
+        GossipPush::GossipInfection infection;
+        infection.idMsg = lastIdMsg++;
+        infection.roundsLeft = roundRatio;
+        infection.source = myAddress.str();
+        infection.text = "A message is nice";
+        infections.push_back(infection);
+        /* reduce the number of future infections */
+        numMessages--;
+        cancelEvent(ctrlMsg1);
+        ctrlMsg1->setKind(GOSSIP);
+        scheduleAt(simTime() + gossipInterval, ctrlMsg1);
+        if (numMessages) {
+            ctrlMsg0->setKind(NEW_GOSSIP);
+            scheduleAt(simTime() + intervalAmongNewMessages, ctrlMsg0);
+        }
     }
 }
 
 void GossipPush::handleMessageWhenUp(cMessage *msg)
 {
     cPacket* pkt = nullptr;
-
+    map<cMessage*, ITimeOut*>::iterator it;
 
 
     if (msg->isSelfMessage()) {
@@ -65,32 +103,10 @@ void GossipPush::handleMessageWhenUp(cMessage *msg)
         switch (msg->getKind()) {
             case START:
                 processStart();
-                testing->reportMessage(TickAutomatonTypes::ACTIVATE);
-                interpreter->move();
+                sm_tick_gossip->reportMessage(TickAutomatonTypes::MSG_ACTIVATE);
                 break;
             case NEW_GOSSIP:
-                EV_TRACE << "Message Received\n";
-                if (isSource) {
-                    /* let's create the infection */
-                    GossipPush::GossipInfection infection;
-                    infection.idMsg = lastIdMsg++;
-                    infection.roundsLeft = roundRatio;
-                    infection.source = myAddress.str();
-                    infection.text = "A message is nice";
-                    infections.push_back(infection);
-
-                    /* reduce the number of future infections */
-                    numMessages--;
-
-                    cancelEvent(ctrlMsg1);
-                    ctrlMsg1->setKind(GOSSIP);
-                    scheduleAt(simTime() + gossipInterval, ctrlMsg1);
-
-                    if (numMessages) {
-                        ctrlMsg0->setKind(NEW_GOSSIP);
-                        scheduleAt(simTime() + intervalAmongNewMessages, ctrlMsg0);
-                    }
-                }
+            newGossip();
                 break;
             case GOSSIP:
                 if (gossiping() && !ctrlMsg1->isScheduled()) {
@@ -104,9 +120,20 @@ void GossipPush::handleMessageWhenUp(cMessage *msg)
                     scheduleAt(simTime() + HELLO_INTERVAL, ctrlHello);
                 }
                 break;
+            case TICK_MESSAGE:
+                it = timers.find(msg);
+                if (it != timers.end()) {
+                    it->second->timeOut();
+                    timers.erase(it);
+                }
+                cancelAndDelete(msg);
+
+                break;
             default:
                 break;
         }
+
+        this->interpreting();
 
     }
     else if (msg->getKind() == UDP_I_DATA) {
@@ -303,9 +330,125 @@ void GossipPush::processStart()
 
 void GossipPush::registerListener(ITimeOut* listener, double afterElapsedTime)
 {
-        ITimeOutProducer::registerListener(listener, afterElapsedTime);
-        EV_TRACE << "Registering listener because we enter in the state of waiting for tick " << afterElapsedTime << "\n";
+    ITimeOutProducer::registerListener(listener, afterElapsedTime);
+    EV_TRACE << "Registering listener because we enter in the state of waiting for tick " << afterElapsedTime << "\n";
+    cMessage* m = new cMessage("a tick");
+    m->setKind(TICK_MESSAGE);
+    timers.insert (std::pair<cMessage*, ITimeOut*>(m, listener));
+    scheduleAt(simTime() + afterElapsedTime, m);
 
+
+}
+
+void GossipPush::interpreting()
+{
+    for (StateMachineInterpreter* i : interpreters) {
+        i->move();
+    }
+}
+
+class wActions : public StateActions {
+private:
+    StateMachine* sm_hello;
+    StateMachine* sm_newGossip;
+public:
+    wActions(StateMachine* t_hello, StateMachine* t_newGossip):sm_hello(t_hello), sm_newGossip(t_newGossip) {};
+    virtual void enteringState(State* s, StateMachine* stateMachine) {
+        sm_hello->reportMessage(MSG_ACTIVATE);
+        sm_newGossip->reportMessage(MSG_ACTIVATE);
+    }
+};
+
+class ngActions : public StateActions {
+private:
+    GossipPush* gp;
+    StateMachine* sm_Gossip;
+public:
+    ngActions(GossipPush* gpp, StateMachine* t_Gossip):gp(gpp), sm_Gossip(t_Gossip) {};
+    virtual void enteringState(State* s, StateMachine* stateMachine) {
+        gp->newGossip();
+        sm_Gossip->reportMessage(MSG_ACTIVATE);
+        stateMachine->reportMessage(MSG_TRUE);
+    }
+};
+
+class hActions : public StateActions {
+private:
+    GossipPush* gp;
+public:
+    hActions(GossipPush* gpp):gp(gpp){};
+    virtual void enteringState(State* s, StateMachine* stateMachine) {
+        gp->sayHello();
+        stateMachine->reportMessage(MSG_TRUE);
+    }
+};
+
+class helloActions : public StateActions {
+private:
+    GossipPush* gp;
+public:
+    helloActions(GossipPush* gpp):gp(gpp){};
+    virtual void enteringState(State* s, StateMachine* stateMachine) {
+        gp->sayHello();
+        stateMachine->reportMessage(MSG_TRUE);
+    }
+};
+
+class dataActions : public StateActions {
+private:
+    GossipPush* gp;
+public:
+    dataActions(GossipPush* gpp):gp(gpp){};
+    virtual void enteringState(State* s, StateMachine* stateMachine) {
+        gp->sayHello();
+        stateMachine->reportMessage(MSG_TRUE);
+    }
+};
+
+StateMachine* GossipPush::createProtocolStateMachine()
+{
+
+    StateMachine* sm = new StateMachine();
+
+    auto s = new State("s", new NoActions());
+    auto w = new State("w", new wActions(sm_tick_hello, sm_tick_new_gossip)); // done
+    auto h = new State("h", new hActions(this)); // done
+    auto g = new State("g", new NoActions());
+    auto ng = new State("ng", new ngActions(this, sm_tick_gossip)); // done
+    auto hello = new State("hello", new helloActions(this));
+    auto data = new State("data", new dataActions(this));
+    auto c = new State("c", new NoActions());
+
+    // from s
+    sm->addTransition(MSG_INITIALIZE, s, w);
+
+    // from w
+    sm->addTransition(MSG_NEW_GOSSIP, w,ng);
+    sm->addTransition(MSG_GREET, w,h);
+    sm->addTransition(MSG_HELLO, w,hello);
+    sm->addTransition(MSG_DATA, w,data);
+    sm->addTransition(MSG_GOSSIP, w,g);
+
+    // from ng
+    sm->addTransition(MSG_TRUE, ng, w);
+
+    // from h
+    sm->addTransition(MSG_TRUE, h, w);
+
+    // from hello
+    sm->addTransition(MSG_TRUE, hello, w);
+
+    // from data
+    sm->addTransition(MSG_TRUE, data, w);
+
+    // from g
+    sm->addTransition(MSG_EMPTY_MAILBOX, g, w);
+    sm->addTransition(MSG_FULL_MAILBOX, g, c);
+
+    // from c
+    sm->addTransition(MSG_TRUE, c, w);
+
+    return sm;
 }
 
 } //namespace

@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <iterator>     // std::distance
 
+#include <iostream>
+
 using namespace std;
 
 namespace inet {
@@ -21,37 +23,37 @@ StateMachine::StateMachine() {
 StateMachine::~StateMachine() {
 }
 
-bool StateMachine::addState(State& s)
+bool StateMachine::addState(State* s)
 {
-    if (s.owner) return false;
-    s.owner = this;
+    if (s->owner) return false;
+    s->owner = this;
     this->states.push_back(s);
     return true;
 }
 
-bool StateMachine::addTransition(MessageType id, State& from, State& to)
+bool StateMachine::addTransition(MessageType id, State* from, State* to)
 {
-    vector<State>::iterator it0 = std::find(states.begin(), states.end(), from);
-    vector<State>::iterator it1 = std::find(states.begin(), states.end(), to);
+    vector<State*>::iterator it0 = std::find(states.begin(), states.end(), from);
+    vector<State*>::iterator it1 = std::find(states.begin(), states.end(), to);
 
     if (it0 == states.end()) return false;
     if (it1 == states.end()) return false;
 
-    int idx1 = std::distance(it1, states.begin());
+    int idx1 = std::distance(states.begin(), it1);
 
-    from.addTransition(id, idx1);
+    from->addTransition(id, idx1);
     return true;
 }
 
-void StateMachine::setInitialState(State& s)
+void StateMachine::setInitialState(State* s)
 {
-    vector<State>::iterator it0 = std::find(states.begin(), states.end(), s);
+    vector<State*>::iterator it0 = std::find(states.begin(), states.end(), s);
     if (it0 != states.end()) {
-        initialState = std::distance(it0, states.begin());
+        initialState = std::distance(states.begin(), it0);
     }
 }
 
-State& StateMachine::getState(int idx)
+State* StateMachine::getState(int idx)
 {
     return states[idx];
 }
@@ -72,30 +74,30 @@ State::State(const State& other)
     this->name = other.name;
     this->owner = other.owner;
     this->actions = other.actions;
-    for (Transition t : other.transitions)
+    for (Transition* t : other.transitions)
         transitions.push_back(t);
 }
 
 void State::addTransition(MessageType id, int to)
 {
-    transitions.push_back( Transition(id, to) );
+    transitions.push_back( new Transition(id, to) );
 }
 
 bool State::existsTransition(MessageType id)
 {
-    return std::any_of(transitions.begin(), transitions.end(), [&] (Transition t) {
-        return t.getMessageId() == id;
+    return std::any_of(transitions.begin(), transitions.end(), [&] (Transition* t) {
+        return t->getMessageId() == id;
     });
 }
 
-State& State::next(MessageType id)
+State* State::next(MessageType id)
 {
-    vector<Transition>::iterator it = std::find_if(transitions.begin(), transitions.end(), [&] (Transition t) {
-        return t.getMessageId() == id;
+    vector<Transition*>::iterator it = std::find_if(transitions.begin(), transitions.end(), [&] (Transition* t) {
+        return t->getMessageId() == id;
     });
 
     if (it != transitions.end()) {
-        int to = it->getTo();
+        int to = (*it)->getTo();
 
         return this->owner->getState(to);
     }
@@ -114,6 +116,11 @@ MessageType MessagePool::drop(int idx)
     MessageType m = *it;
     messages.erase(it);
     return m;
+}
+
+Transition::~Transition()
+{
+
 }
 
 } /* namespace inet */

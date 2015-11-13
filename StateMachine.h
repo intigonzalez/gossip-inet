@@ -11,6 +11,7 @@
 #include <vector>
 #include <string>
 #include <stdexcept>
+#include <iostream>
 
 using std::vector;
 using std::string;
@@ -22,8 +23,8 @@ namespace inet {
 typedef int MessageType;
 
 enum BasicTypes {
-    TRUE = 1,
-    FALSE = 2
+    MSG_TRUE = 1,
+    MSG_FALSE = 2
 };
 
 class StateMachine;
@@ -35,21 +36,21 @@ class MessagePool;
  */
 class StateMachine {
 protected:
-    vector<State> states;
+    vector<State*> states;
     int initialState = 0;
     MessagePool* pool;
 public:
     StateMachine();
     virtual ~StateMachine();
 
-    bool addState(State& s);
+    bool addState(State* s);
 
-    bool addTransition(MessageType id, State& from, State& to);
+    bool addTransition(MessageType id, State* from, State* to);
 
-    State& getInitialState() { return states[initialState]; }
-    void setInitialState(State& s);
+    State* getInitialState() { return states[initialState]; }
+    void setInitialState(State* s);
 
-    State& getState(int idx);
+    State* getState(int idx);
 
     virtual void reportMessage(MessageType msgId);
 
@@ -74,12 +75,23 @@ public:
 
 class StateActions {
 public:
-    virtual void enteringState(State& s, StateMachine* stateMachine) = 0;
+    virtual void enteringState(State* s, StateMachine* stateMachine) = 0;
 };
 
 class NoActions : public StateActions {
 public:
-    virtual void enteringState(State& s, StateMachine* stateMachine) {}
+    virtual void enteringState(State* s, StateMachine* stateMachine) {}
+};
+
+class LogActions : public StateActions {
+private:
+    std::string msg;
+public:
+    LogActions(std::string a): msg(a) {}
+
+    virtual void enteringState(State* s, StateMachine* stateMachine) {
+        std::cout << " LALLAAL  " << msg << std::endl;
+    }
 };
 
 /**
@@ -88,7 +100,7 @@ public:
 class State {
 protected:
     string name;
-    vector<Transition> transitions;
+    vector<Transition*> transitions;
     StateMachine* owner = nullptr;
     StateActions* actions = nullptr;
 public:
@@ -100,13 +112,13 @@ public:
 
     bool existsTransition(MessageType id);
 
-    State& next(MessageType id);
+    State* next(MessageType id);
 
     StateActions* getActions()  { return actions; }
 
     bool operator==(const State& other);
 
-    friend bool StateMachine::addState(State& s);
+    friend bool StateMachine::addState(State* s);
 };
 
 /**

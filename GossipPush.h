@@ -90,8 +90,13 @@ class INET_API GossipPush : public ApplicationBase, public ITimeOutProducer
 
     // a state machine
     StateMachine* anotherSM;
-    StateMachine* testing;
-    StateMachineInterpreter* interpreter;
+    StateMachine* sm_tick_gossip;
+    StateMachine* sm_tick_new_gossip;
+    StateMachine* sm_tick_hello;
+    StateMachine* sm_proptocol;
+    vector<StateMachineInterpreter*> interpreters;
+
+    map<cMessage*, ITimeOut*> timers;
 
   protected:
 
@@ -99,9 +104,6 @@ class INET_API GossipPush : public ApplicationBase, public ITimeOutProducer
     virtual void initialize(int stage) override;
     virtual void handleMessageWhenUp(cMessage *msg) override;
     virtual void finish() override;
-
-    bool gossiping();
-    bool sayHello();
 
     virtual bool handleNodeStart(IDoneCallback *doneCallback) override;
     virtual bool handleNodeShutdown(IDoneCallback *doneCallback) override;
@@ -111,7 +113,18 @@ class INET_API GossipPush : public ApplicationBase, public ITimeOutProducer
 
     virtual void processStart();
 
+    void interpreting();
+
+    virtual StateMachine* createProtocolStateMachine();
+
+  public: // and by making this public, I am just signing my death sentence
+    bool gossiping();
+    bool sayHello();
+    void newGossip();
 private:
+    static const int TICK_MESSAGE = 456;
+
+
 };
 
 } //namespace
