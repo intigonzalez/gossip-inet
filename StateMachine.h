@@ -12,8 +12,10 @@
 #include <string>
 #include <stdexcept>
 #include <iostream>
+#include <map>
 
 using std::vector;
+using std::map;
 using std::string;
 using std::runtime_error;
 
@@ -75,12 +77,12 @@ public:
 
 class StateActions {
 public:
-    virtual void enteringState(State* s, StateMachine* stateMachine) = 0;
+    virtual void enteringState(State* s, StateMachine* stateMachine, MessageType msg, void* extraData) = 0;
 };
 
 class NoActions : public StateActions {
 public:
-    virtual void enteringState(State* s, StateMachine* stateMachine) {}
+    virtual void enteringState(State* s, StateMachine* stateMachine, MessageType msg, void* extraData) {}
 };
 
 class LogActions : public StateActions {
@@ -89,8 +91,8 @@ private:
 public:
     LogActions(std::string a): msg(a) {}
 
-    virtual void enteringState(State* s, StateMachine* stateMachine) {
-        std::cout << " LALLAAL  " << msg << std::endl;
+    virtual void enteringState(State* s, StateMachine* stateMachine, MessageType msg, void* extraData) {
+        std::cout << " LALLAAL  " << this->msg << std::endl;
     }
 };
 
@@ -128,11 +130,14 @@ public:
 class MessagePool {
 protected:
     vector<MessageType> messages;
+    map<int, void*> extraData;
 public:
     void add(MessageType msg) { messages.push_back(msg); }
+    void add(MessageType msg, void* extraData);
     bool isEmpty() {  return messages.size() == 0;  }
     int count() { return messages.size(); }
     MessageType operator[] (int idx) { return messages[idx]; }
+    void* getExtraData(MessageType m);
     MessageType drop(int idx);
 };
 

@@ -36,7 +36,7 @@ void StateMachineInterpreter::move()
 //            std::cout << " going next " << std::endl;
             current = current->next(m);
 //            std::cout << " Now it is Ok " << current << std::endl;
-            current->getActions()->enteringState(current, sm);
+            current->getActions()->enteringState(current, sm, m, p->getExtraData(m));
             p->drop(i);
         }
     } while (f);

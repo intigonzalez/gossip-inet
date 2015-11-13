@@ -66,6 +66,9 @@ void GossipPush::initialize(int stage)
         sm_tick_gossip = buildTicker(string("testing everything"), 0.5, anotherSM, MSG_GOSSIP, this);
         interpreters.push_back(new StateMachineInterpreter(anotherSM));
         interpreters.push_back(new StateMachineInterpreter(sm_tick_gossip));
+
+        sm_proptocol = createProtocolStateMachine();
+
         EV_TRACE << "State Machines have been created\n";
     }
 }
@@ -138,56 +141,56 @@ void GossipPush::handleMessageWhenUp(cMessage *msg)
     }
     else if (msg->getKind() == UDP_I_DATA) {
         pkt = PK(msg);
-        UDPDataIndication *ctrl = check_and_cast<UDPDataIndication *>(pkt->getControlInfo());
-        Gossip* g = check_and_cast_nullable<Gossip*>(dynamic_cast<Gossip*>(pkt));
 
-        if (g) {
-            bool exists = std::any_of(infections.begin(), infections.end(), [&](GossipInfection t) {
+        bool done = processReceivedGossip(pkt);
+        done = done || processReceivedHello(pkt);
 
-                return (g->getId() == t.idMsg) && (g->getSource() == t.source);
-            });
-
-            if (!exists) {
-
-                GossipInfection t;
-                t.idMsg = g->getId();
-                t.roundsLeft = roundRatio;
-                t.source = g->getSource();
-                t.text = g->getMsg();
-                infections.push_back(t);
-
-                EV_TRACE << "A new foreign message : '"  <<  t.text << "' from " << t.source << " through "<< ctrl->getSrcAddr() << "\n";
-            }
-
-            if (!ctrlMsg1->isScheduled()) {
-                ctrlMsg1->setKind(GOSSIP);
-                scheduleAt(simTime() + gossipInterval, ctrlMsg1);
-            }
+        // unknown package
+        if (!done) {
+            delete pkt;
         }
-        else {
-
-            GossipHello * gh = check_and_cast_nullable<GossipHello*>(dynamic_cast<GossipHello*>(pkt));
-            if (gh) {
-
-                L3Address result;
-                L3AddressResolver().tryResolve(gh->getId(), result);
-                if (result.isUnspecified())
-                    EV_ERROR << "cannot resolve destination address: " << ((gh->getId())?gh->getId():"NULL") << endl;
-                else if (myself != gh->getId()) {
-                    string sss = gh->getId();
-                    map<string, L3Address>::iterator it = addresses.find(sss);
-                    if (it == addresses.end()) {
-                        EV_TRACE << "Hello from " << sss << "\n";
-                        addresses.insert(std::pair<string,L3Address>(sss, result));
-                    }
-                }
-            }
-
-        }
-
-        delete pkt;
     }
 
+}
+
+bool GossipPush::processReceivedGossip(cPacket * pkt)
+{
+
+    Gossip* g = check_and_cast_nullable<Gossip*>(dynamic_cast<Gossip*>(pkt));
+
+    if ( g == nullptr ) return false;
+
+    addNewInfection(g);
+
+    // activate the ticker
+    if (!ctrlMsg1->isScheduled()) {
+        ctrlMsg1->setKind(GOSSIP);
+        scheduleAt(simTime() + gossipInterval, ctrlMsg1);
+    }
+
+    sm_proptocol->getPool()->add(MSG_DATA, pkt);
+
+    return true;
+}
+
+bool GossipPush::processReceivedHello(cPacket * pkt) {
+
+    GossipHello* gh = check_and_cast_nullable<GossipHello*>(dynamic_cast<GossipHello*>(pkt));
+
+    if (gh == nullptr) return false;
+
+    L3Address result;
+    L3AddressResolver().tryResolve(gh->getId(), result);
+    if (result.isUnspecified())
+        EV_ERROR << "cannot resolve destination address: "
+                        << ((gh->getId()) ? gh->getId() : "NULL") << endl;
+    else {
+        addNewAddress(gh->getId(), result);
+    }
+
+    sm_proptocol->getPool()->add(MSG_HELLO, pkt);
+
+    return true;
 }
 
 bool GossipPush::sayHello()
@@ -347,13 +350,44 @@ void GossipPush::interpreting()
     }
 }
 
+void GossipPush::addNewAddress(string id, L3Address& addr)
+{
+    if (myself != id) {
+        auto it = addresses.find(id);
+        if (it == addresses.end()) {
+            EV_TRACE << "Hello from " << id << "\n";
+            addresses.insert(std::pair<string, L3Address>(id, addr));
+        }
+    }
+}
+
+void GossipPush::addNewInfection(Gossip* g)
+{
+    bool exists = std::any_of(infections.begin(), infections.end(), [&](GossipInfection t) {
+        return (g->getId() == t.idMsg) && (g->getSource() == t.source);
+    });
+
+    if (!exists) {
+        GossipInfection t;
+        t.idMsg = g->getId();
+        t.roundsLeft = roundRatio;
+        t.source = g->getSource();
+        t.text = g->getMsg();
+        infections.push_back(t);
+
+        UDPDataIndication *ctrl = check_and_cast<UDPDataIndication *>(g->getControlInfo());
+
+        EV_TRACE << "A new foreign message : '"  <<  t.text << "' from " << t.source << " through "<< ctrl->getSrcAddr() << "\n";
+    }
+}
+
 class wActions : public StateActions {
 private:
     StateMachine* sm_hello;
     StateMachine* sm_newGossip;
 public:
     wActions(StateMachine* t_hello, StateMachine* t_newGossip):sm_hello(t_hello), sm_newGossip(t_newGossip) {};
-    virtual void enteringState(State* s, StateMachine* stateMachine) {
+    virtual void enteringState(State* s, StateMachine* stateMachine, MessageType msg, void* extraData) {
         sm_hello->reportMessage(MSG_ACTIVATE);
         sm_newGossip->reportMessage(MSG_ACTIVATE);
     }
@@ -365,7 +399,7 @@ private:
     StateMachine* sm_Gossip;
 public:
     ngActions(GossipPush* gpp, StateMachine* t_Gossip):gp(gpp), sm_Gossip(t_Gossip) {};
-    virtual void enteringState(State* s, StateMachine* stateMachine) {
+    virtual void enteringState(State* s, StateMachine* stateMachine, MessageType msg, void* extraData) {
         gp->newGossip();
         sm_Gossip->reportMessage(MSG_ACTIVATE);
         stateMachine->reportMessage(MSG_TRUE);
@@ -377,8 +411,29 @@ private:
     GossipPush* gp;
 public:
     hActions(GossipPush* gpp):gp(gpp){};
-    virtual void enteringState(State* s, StateMachine* stateMachine) {
+    virtual void enteringState(State* s, StateMachine* stateMachine, MessageType msg, void* extraData) {
         gp->sayHello();
+        stateMachine->reportMessage(MSG_TRUE);
+    }
+};
+
+class gActions : public StateActions {
+private:
+    GossipPush* gp;
+public:
+    gActions(GossipPush* gpp):gp(gpp){};
+    virtual void enteringState(State* s, StateMachine* stateMachine, MessageType msg, void* extraData) {
+        stateMachine->reportMessage(gp->isInfected()? MSG_FULL_MAILBOX : MSG_EMPTY_MAILBOX);
+    }
+};
+
+class cActions : public StateActions {
+private:
+    GossipPush* gp;
+public:
+    cActions(GossipPush* gpp):gp(gpp){};
+    virtual void enteringState(State* s, StateMachine* stateMachine, MessageType msg, void* extraData) {
+        gp->gossiping();
         stateMachine->reportMessage(MSG_TRUE);
     }
 };
@@ -388,8 +443,24 @@ private:
     GossipPush* gp;
 public:
     helloActions(GossipPush* gpp):gp(gpp){};
-    virtual void enteringState(State* s, StateMachine* stateMachine) {
-        gp->sayHello();
+    virtual void enteringState(State* s, StateMachine* stateMachine, MessageType msg, void* extraData) {
+        GossipHello* gh = check_and_cast_nullable<GossipHello*>(dynamic_cast<GossipHello*>((cPacket*)extraData));
+
+        if (gh == nullptr) {
+            // panic
+            EV_ERROR << "NOOOOOOOOOOOOO, processing a packet as GossipHello when it is not GossipHello\n";
+            return;
+        }
+
+        L3Address result;
+        L3AddressResolver().tryResolve(gh->getId(), result);
+        if (result.isUnspecified())
+            EV_ERROR << "cannot resolve destination address: "
+                            << ((gh->getId()) ? gh->getId() : "NULL") << endl;
+        else {
+            gp->addNewAddress(gh->getId(), result);
+        }
+
         stateMachine->reportMessage(MSG_TRUE);
     }
 };
@@ -397,10 +468,23 @@ public:
 class dataActions : public StateActions {
 private:
     GossipPush* gp;
+    StateMachine* sm_Gossip;
 public:
-    dataActions(GossipPush* gpp):gp(gpp){};
-    virtual void enteringState(State* s, StateMachine* stateMachine) {
-        gp->sayHello();
+    dataActions(GossipPush* gpp, StateMachine* t_Gossip):gp(gpp), sm_Gossip(t_Gossip) {};
+    virtual void enteringState(State* s, StateMachine* stateMachine, MessageType msg, void* extraData) {
+        Gossip* g = check_and_cast_nullable<Gossip*>(dynamic_cast<Gossip*>((cPacket*)extraData));
+
+        if ( g == nullptr )  {
+            // panic
+            EV_ERROR << "NOOOOOOOOOOOOO, processing a packet as Gossip when it is not Gossip\n";
+            return;
+        }
+
+        gp->addNewInfection(g);
+
+        // activate the ticker
+        sm_Gossip->reportMessage(MSG_ACTIVATE);
+
         stateMachine->reportMessage(MSG_TRUE);
     }
 };
@@ -410,14 +494,14 @@ StateMachine* GossipPush::createProtocolStateMachine()
 
     StateMachine* sm = new StateMachine();
 
-    auto s = new State("s", new NoActions());
+    auto s = new State("s", new NoActions()); // done
     auto w = new State("w", new wActions(sm_tick_hello, sm_tick_new_gossip)); // done
     auto h = new State("h", new hActions(this)); // done
-    auto g = new State("g", new NoActions());
+    auto g = new State("g", new gActions(this)); // done
     auto ng = new State("ng", new ngActions(this, sm_tick_gossip)); // done
-    auto hello = new State("hello", new helloActions(this));
-    auto data = new State("data", new dataActions(this));
-    auto c = new State("c", new NoActions());
+    auto hello = new State("hello", new helloActions(this)); // done
+    auto data = new State("data", new dataActions(this, sm_tick_gossip));
+    auto c = new State("c", new cActions(this)); // done
 
     // from s
     sm->addTransition(MSG_INITIALIZE, s, w);

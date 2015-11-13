@@ -27,6 +27,9 @@
 #include "inet/applications/base/ApplicationBase.h"
 #include "inet/transportlayer/contract/udp/UDPSocket.h"
 
+#include "Gossip_m.h"
+#include "GossipHello_m.h"
+
 #include "TickAutomaton.h"
 #include "StateMachine.h"
 #include "StateMachineInterpreter.h"
@@ -121,6 +124,11 @@ class INET_API GossipPush : public ApplicationBase, public ITimeOutProducer
     bool gossiping();
     bool sayHello();
     void newGossip();
+    bool processReceivedGossip(cPacket* pkt);
+    bool processReceivedHello(cPacket* pkt);
+    bool isInfected()  { return !infections.empty(); }
+    void addNewAddress(string id, L3Address& addr);
+    void addNewInfection(Gossip* g);
 private:
     static const int TICK_MESSAGE = 456;
 

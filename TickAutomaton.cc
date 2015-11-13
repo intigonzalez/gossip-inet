@@ -15,7 +15,7 @@ protected:
     MessageType msgId;
 public:
     NotifyTick(StateMachine* t, MessageType mi):target(t), msgId(mi) {}
-    virtual void enteringState(State* s, StateMachine* stateMachine) {
+    virtual void enteringState(State* s, StateMachine* stateMachine, MessageType msg, void* extraData) {
         target->reportMessage(msgId);
         stateMachine->reportMessage(MSG_TRUE);
     }
@@ -34,7 +34,7 @@ public:
     }
 
 
-    virtual void enteringState(State* s, StateMachine* stateMachine) {
+    virtual void enteringState(State* s, StateMachine* stateMachine, MessageType msg, void* extraData) {
         sm = stateMachine;
         top->registerListener(this, d);
     }

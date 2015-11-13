@@ -111,11 +111,37 @@ bool State::operator==(const State& other)
 
 MessageType MessagePool::drop(int idx)
 {
-    vector<MessageType>::iterator it = messages.begin();
+    auto it = messages.begin();
     std::advance(it, idx);
     MessageType m = *it;
     messages.erase(it);
+    auto it2 = extraData.find(idx);
+    if (it2 != extraData.end()) {
+        extraData.erase(it2);
+    }
     return m;
+}
+
+void* MessagePool::getExtraData(MessageType m)
+{
+    auto it = std::find(messages.begin(), messages.end(), m);
+    if (it == messages.end()) return nullptr;
+
+    int idx = std::distance(messages.begin(), it);
+
+    auto i2 = extraData.find(idx);
+
+    if (i2 != extraData.end()) {
+        return i2->second;
+    }
+    return nullptr;
+}
+
+void MessagePool::add(MessageType msg, void* extraData)
+{
+    int t = messages.size();
+    messages.push_back(msg);
+    this->extraData.insert( std::pair<int, void*>(t, extraData) );
 }
 
 Transition::~Transition()
