@@ -62,36 +62,19 @@ void GossipPush::initialize(int stage)
         ctrlHello = new cMessage("controlHello", IDLE);
 
         EV_TRACE << "Creating State Machines\n";
-        anotherSM = buildDummyAutomaton(MSG_GOSSIP);
-        sm_tick_gossip = buildTicker(string("testing everything"), 0.5, anotherSM, MSG_GOSSIP, this);
-        interpreters.push_back(new StateMachineInterpreter(anotherSM));
-        interpreters.push_back(new StateMachineInterpreter(sm_tick_gossip));
 
         sm_proptocol = createProtocolStateMachine();
 
-        EV_TRACE << "State Machines have been created\n";
-    }
-}
+        sm_tick_hello = buildTicker(string("ticker hello"), HELLO_INTERVAL, sm_proptocol, MSG_GREET, this);
+        sm_tick_gossip = buildTicker(string("ticker gossip"), gossipInterval, sm_proptocol, MSG_GOSSIP, this);
+        sm_tick_new_gossip = buildTicker(string("ticker new gossip"), intervalAmongNewMessages, sm_proptocol, MSG_NEW_GOSSIP, this);
+//
+        interpreters.push_back(new StateMachineInterpreter(sm_proptocol));
+        interpreters.push_back(new StateMachineInterpreter(sm_tick_hello));
+        interpreters.push_back(new StateMachineInterpreter(sm_tick_gossip));
+        interpreters.push_back(new StateMachineInterpreter(sm_tick_new_gossip));
 
-void GossipPush::newGossip() {
-    EV_TRACE << "Message Received\n";
-    if (isSource) {
-        /* let's create the infection */
-        GossipPush::GossipInfection infection;
-        infection.idMsg = lastIdMsg++;
-        infection.roundsLeft = roundRatio;
-        infection.source = myAddress.str();
-        infection.text = "A message is nice";
-        infections.push_back(infection);
-        /* reduce the number of future infections */
-        numMessages--;
-        cancelEvent(ctrlMsg1);
-        ctrlMsg1->setKind(GOSSIP);
-        scheduleAt(simTime() + gossipInterval, ctrlMsg1);
-        if (numMessages) {
-            ctrlMsg0->setKind(NEW_GOSSIP);
-            scheduleAt(simTime() + intervalAmongNewMessages, ctrlMsg0);
-        }
+        EV_TRACE << "State Machines have been created\n";
     }
 }
 
@@ -106,7 +89,7 @@ void GossipPush::handleMessageWhenUp(cMessage *msg)
         switch (msg->getKind()) {
             case START:
                 processStart();
-                sm_tick_gossip->reportMessage(TickAutomatonTypes::MSG_ACTIVATE);
+                //sm_tick_gossip->reportMessage(TickAutomatonTypes::MSG_ACTIVATE);
                 break;
             case NEW_GOSSIP:
             newGossip();
@@ -151,6 +134,28 @@ void GossipPush::handleMessageWhenUp(cMessage *msg)
         }
     }
 
+}
+
+void GossipPush::newGossip() {
+    EV_TRACE << "Message Received\n";
+    if (isSource) {
+        /* let's create the infection */
+        GossipPush::GossipInfection infection;
+        infection.idMsg = lastIdMsg++;
+        infection.roundsLeft = roundRatio;
+        infection.source = myAddress.str();
+        infection.text = "A message is nice";
+        infections.push_back(infection);
+        /* reduce the number of future infections */
+        numMessages--;
+        cancelEvent(ctrlMsg1);
+        ctrlMsg1->setKind(GOSSIP);
+        scheduleAt(simTime() + gossipInterval, ctrlMsg1);
+        if (numMessages) {
+            ctrlMsg0->setKind(NEW_GOSSIP);
+            scheduleAt(simTime() + intervalAmongNewMessages, ctrlMsg0);
+        }
+    }
 }
 
 bool GossipPush::processReceivedGossip(cPacket * pkt)
@@ -334,7 +339,7 @@ void GossipPush::processStart()
 void GossipPush::registerListener(ITimeOut* listener, double afterElapsedTime)
 {
     ITimeOutProducer::registerListener(listener, afterElapsedTime);
-    EV_TRACE << "Registering listener because we enter in the state of waiting for tick " << afterElapsedTime << "\n";
+    //EV_TRACE << "Registering listener because we enter in the state of waiting for tick " << afterElapsedTime << "\n";
     cMessage* m = new cMessage("a tick");
     m->setKind(TICK_MESSAGE);
     timers.insert (std::pair<cMessage*, ITimeOut*>(m, listener));
@@ -345,9 +350,13 @@ void GossipPush::registerListener(ITimeOut* listener, double afterElapsedTime)
 
 void GossipPush::interpreting()
 {
-    for (StateMachineInterpreter* i : interpreters) {
-        i->move();
-    }
+    bool b;
+    do {
+        b = false;
+        for (StateMachineInterpreter* i : interpreters) {
+            b = b | i->move();
+        }
+    } while (b);
 }
 
 void GossipPush::addNewAddress(string id, L3Address& addr)
@@ -500,8 +509,17 @@ StateMachine* GossipPush::createProtocolStateMachine()
     auto g = new State("g", new gActions(this)); // done
     auto ng = new State("ng", new ngActions(this, sm_tick_gossip)); // done
     auto hello = new State("hello", new helloActions(this)); // done
-    auto data = new State("data", new dataActions(this, sm_tick_gossip));
+    auto data = new State("data", new dataActions(this, sm_tick_gossip)); // done
     auto c = new State("c", new cActions(this)); // done
+
+    sm->addState(s);
+    sm->addState(w);
+    sm->addState(h);
+    sm->addState(g);
+    sm->addState(ng);
+    sm->addState(hello);
+    sm->addState(data);
+    sm->addState(c);
 
     // from s
     sm->addTransition(MSG_INITIALIZE, s, w);

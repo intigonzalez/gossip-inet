@@ -20,7 +20,7 @@ public:
     StateMachineInterpreter(StateMachine* sm):sm(sm), current(sm->getInitialState()) {}
     virtual ~StateMachineInterpreter();
 
-    void move();
+    bool move();
 };
 
 } /* namespace inet */

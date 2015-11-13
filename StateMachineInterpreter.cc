@@ -15,11 +15,12 @@ StateMachineInterpreter::~StateMachineInterpreter() {
     // TODO Auto-generated destructor stub
 }
 
-void StateMachineInterpreter::move()
+bool StateMachineInterpreter::move()
 {
     MessagePool* p = sm->getPool();
     bool f;
-//    std::cout << "Pool contains : " << p->count() << " elements " << std::endl;
+    std::cout << "Pool contains : " << p->count() << " elements " << std::endl;
+    int c = 0;
     do {
         f = false;
         int i = 0;
@@ -32,14 +33,17 @@ void StateMachineInterpreter::move()
             }
         }
         if (f) {
+            c++;
             MessageType m = (*p)[i];
-//            std::cout << " going next " << std::endl;
+            std::cout << " going next " << std::endl;
             current = current->next(m);
-//            std::cout << " Now it is Ok " << current << std::endl;
+            std::cout << " Now it is Ok " << current << std::endl;
             current->getActions()->enteringState(current, sm, m, p->getExtraData(m));
             p->drop(i);
         }
     } while (f);
+
+    return c > 0;
 }
 
 } /* namespace inet */
