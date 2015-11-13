@@ -58,23 +58,6 @@ void GossipPush::initialize(int stage)
         EV_TRACE << "Initialized as source : " << isSource << "\n";
 
         ctrlMsg0 = new cMessage("controlMSG", IDLE);
-        ctrlMsg1 = new cMessage("controlMSG2", IDLE);
-        ctrlHello = new cMessage("controlHello", IDLE);
-
-        EV_TRACE << "Creating State Machines\n";
-
-        sm_proptocol = createProtocolStateMachine();
-
-        sm_tick_hello = buildTicker(string("ticker hello"), HELLO_INTERVAL, sm_proptocol, MSG_GREET, this);
-        sm_tick_gossip = buildTicker(string("ticker gossip"), gossipInterval, sm_proptocol, MSG_GOSSIP, this);
-        sm_tick_new_gossip = buildTicker(string("ticker new gossip"), intervalAmongNewMessages, sm_proptocol, MSG_NEW_GOSSIP, this);
-//
-        interpreters.push_back(new StateMachineInterpreter(sm_proptocol));
-        interpreters.push_back(new StateMachineInterpreter(sm_tick_hello));
-        interpreters.push_back(new StateMachineInterpreter(sm_tick_gossip));
-        interpreters.push_back(new StateMachineInterpreter(sm_tick_new_gossip));
-
-        EV_TRACE << "State Machines have been created\n";
     }
 }
 
@@ -89,22 +72,7 @@ void GossipPush::handleMessageWhenUp(cMessage *msg)
         switch (msg->getKind()) {
             case START:
                 processStart();
-                //sm_tick_gossip->reportMessage(TickAutomatonTypes::MSG_ACTIVATE);
-                break;
-            case NEW_GOSSIP:
-            newGossip();
-                break;
-            case GOSSIP:
-                if (gossiping() && !ctrlMsg1->isScheduled()) {
-                    ctrlMsg1->setKind(GOSSIP);
-                    scheduleAt(simTime() + gossipInterval, ctrlMsg1);
-                }
-                break;
-            case SAY_HELLO:
-                if (sayHello() && !ctrlHello->isScheduled()) {
-                    ctrlHello->setKind(SAY_HELLO);
-                    scheduleAt(simTime() + HELLO_INTERVAL, ctrlHello);
-                }
+                sm_proptocol->reportMessage(MSG_INITIALIZE);
                 break;
             case TICK_MESSAGE:
                 it = timers.find(msg);
@@ -118,9 +86,6 @@ void GossipPush::handleMessageWhenUp(cMessage *msg)
             default:
                 break;
         }
-
-        this->interpreting();
-
     }
     else if (msg->getKind() == UDP_I_DATA) {
         pkt = PK(msg);
@@ -134,11 +99,13 @@ void GossipPush::handleMessageWhenUp(cMessage *msg)
         }
     }
 
+    this->interpreting();
+
 }
 
 void GossipPush::newGossip() {
     EV_TRACE << "Message Received\n";
-    if (isSource) {
+    if (isSource && numMessages > 0) {
         /* let's create the infection */
         GossipPush::GossipInfection infection;
         infection.idMsg = lastIdMsg++;
@@ -148,13 +115,6 @@ void GossipPush::newGossip() {
         infections.push_back(infection);
         /* reduce the number of future infections */
         numMessages--;
-        cancelEvent(ctrlMsg1);
-        ctrlMsg1->setKind(GOSSIP);
-        scheduleAt(simTime() + gossipInterval, ctrlMsg1);
-        if (numMessages) {
-            ctrlMsg0->setKind(NEW_GOSSIP);
-            scheduleAt(simTime() + intervalAmongNewMessages, ctrlMsg0);
-        }
     }
 }
 
@@ -164,14 +124,6 @@ bool GossipPush::processReceivedGossip(cPacket * pkt)
     Gossip* g = check_and_cast_nullable<Gossip*>(dynamic_cast<Gossip*>(pkt));
 
     if ( g == nullptr ) return false;
-
-    addNewInfection(g);
-
-    // activate the ticker
-    if (!ctrlMsg1->isScheduled()) {
-        ctrlMsg1->setKind(GOSSIP);
-        scheduleAt(simTime() + gossipInterval, ctrlMsg1);
-    }
 
     sm_proptocol->getPool()->add(MSG_DATA, pkt);
 
@@ -183,15 +135,6 @@ bool GossipPush::processReceivedHello(cPacket * pkt) {
     GossipHello* gh = check_and_cast_nullable<GossipHello*>(dynamic_cast<GossipHello*>(pkt));
 
     if (gh == nullptr) return false;
-
-    L3Address result;
-    L3AddressResolver().tryResolve(gh->getId(), result);
-    if (result.isUnspecified())
-        EV_ERROR << "cannot resolve destination address: "
-                        << ((gh->getId()) ? gh->getId() : "NULL") << endl;
-    else {
-        addNewAddress(gh->getId(), result);
-    }
 
     sm_proptocol->getPool()->add(MSG_HELLO, pkt);
 
@@ -214,9 +157,7 @@ bool GossipPush::sayHello()
 bool GossipPush::gossiping()
 {
     bool r = false;
-    std::vector<GossipInfection>::iterator it;
-
-    it = std::find_if(infections.begin(), infections.end(), [] (GossipInfection f) {
+    auto it = std::find_if(infections.begin(), infections.end(), [] (GossipInfection f) {
        return f.roundsLeft > 0;
     });
 
@@ -246,24 +187,13 @@ void GossipPush::finish()
 {
     if (ctrlMsg0)
         cancelAndDelete(ctrlMsg0);
-
-    if (ctrlMsg1)
-        cancelAndDelete(ctrlMsg1);
-    ctrlMsg1 = nullptr;
-
     ctrlMsg0 = nullptr;
-
-    if (ctrlHello)
-        cancelAndDelete(ctrlHello);
-    ctrlHello = nullptr;
 }
 
 bool GossipPush::handleNodeStart(IDoneCallback *doneCallback)
 {
     ctrlMsg0->setKind(START);
     scheduleAt(simTime() + 0.01, ctrlMsg0);
-    ctrlHello->setKind(SAY_HELLO);
-    scheduleAt(simTime() + HELLO_INTERVAL, ctrlHello);
     return true;
 }
 
@@ -273,14 +203,6 @@ bool GossipPush::handleNodeShutdown(IDoneCallback *doneCallback)
         cancelAndDelete(ctrlMsg0);
     ctrlMsg0 = nullptr;
 
-    if (ctrlMsg1)
-        cancelAndDelete(ctrlMsg1);
-    ctrlMsg1 = nullptr;
-
-    if (ctrlHello)
-        cancelAndDelete(ctrlHello);
-    ctrlHello = nullptr;
-
     return true;
 }
 
@@ -289,14 +211,6 @@ void GossipPush::handleNodeCrash()
     if (ctrlMsg0)
         cancelAndDelete(ctrlMsg0);
     ctrlMsg0 = nullptr;
-
-    if (ctrlMsg1)
-        cancelAndDelete(ctrlMsg1);
-    ctrlMsg1 = nullptr;
-
-    if (ctrlHello)
-        cancelAndDelete(ctrlHello);
-    ctrlHello = nullptr;
 }
 
 void GossipPush::processStart()
@@ -330,10 +244,17 @@ void GossipPush::processStart()
     //socket.setBroadcast(true);
     socket.bind(localPort);
 
-    if (isSource) {
-        ctrlMsg0->setKind(NEW_GOSSIP);
-        scheduleAt(simTime() +  HELLO_INTERVAL + intervalAmongNewMessages, ctrlMsg0);
-    }
+
+    EV_TRACE << "Creating State Machines\n";
+
+    sm_proptocol = createProtocolStateMachine();
+    interpreters.push_back(new StateMachineInterpreter(sm_proptocol));
+    interpreters.push_back(new StateMachineInterpreter(sm_tick_hello));
+    interpreters.push_back(new StateMachineInterpreter(sm_tick_gossip));
+    interpreters.push_back(new StateMachineInterpreter(sm_tick_new_gossip));
+
+    EV_TRACE << "State Machines have been created\n";
+
 }
 
 void GossipPush::registerListener(ITimeOut* listener, double afterElapsedTime)
@@ -359,15 +280,19 @@ void GossipPush::interpreting()
     } while (b);
 }
 
-void GossipPush::addNewAddress(string id, L3Address& addr)
+void GossipPush::addNewAddress(string id)
 {
     if (myself != id) {
+        L3Address result;
+        L3AddressResolver().tryResolve(id.c_str(), result);
         auto it = addresses.find(id);
         if (it == addresses.end()) {
             EV_TRACE << "Hello from " << id << "\n";
-            addresses.insert(std::pair<string, L3Address>(id, addr));
+            addresses.insert(std::pair<string, L3Address>(id, result));
         }
     }
+
+
 }
 
 void GossipPush::addNewInfection(Gossip* g)
@@ -461,14 +386,9 @@ public:
             return;
         }
 
-        L3Address result;
-        L3AddressResolver().tryResolve(gh->getId(), result);
-        if (result.isUnspecified())
-            EV_ERROR << "cannot resolve destination address: "
-                            << ((gh->getId()) ? gh->getId() : "NULL") << endl;
-        else {
-            gp->addNewAddress(gh->getId(), result);
-        }
+        gp->addNewAddress(gh->getId());
+
+        delete gh;
 
         stateMachine->reportMessage(MSG_TRUE);
     }
@@ -491,6 +411,8 @@ public:
 
         gp->addNewInfection(g);
 
+        delete g;
+
         // activate the ticker
         sm_Gossip->reportMessage(MSG_ACTIVATE);
 
@@ -501,7 +423,11 @@ public:
 StateMachine* GossipPush::createProtocolStateMachine()
 {
 
-    StateMachine* sm = new StateMachine();
+    StateMachine* sm = new StateMachine(string("protocol_") + myself);
+
+    sm_tick_hello = buildTicker(string("ticker hello"), HELLO_INTERVAL, sm, MSG_GREET, this);
+    sm_tick_gossip = buildTicker(string("ticker gossip"), gossipInterval, sm, MSG_GOSSIP, this);
+    sm_tick_new_gossip = buildTicker(string("ticker new gossip"), intervalAmongNewMessages, sm, MSG_NEW_GOSSIP, this);
 
     auto s = new State("s", new NoActions()); // done
     auto w = new State("w", new wActions(sm_tick_hello, sm_tick_new_gossip)); // done

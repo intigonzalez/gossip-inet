@@ -47,7 +47,7 @@ public:
 
 StateMachine* buildTicker(string name, double d, StateMachine* target, MessageType msgId, ITimeOutProducer* top)
 {
-    StateMachine* sm = new StateMachine();
+    StateMachine* sm = new StateMachine(name);
 
     // adding initial state
     StateActions* a = new NoActions();
@@ -69,13 +69,14 @@ StateMachine* buildTicker(string name, double d, StateMachine* target, MessageTy
     sm->addTransition(MSG_FALSE, s1, s2);
     sm->addTransition(MSG_TIME_OUT, s1, s2);
     sm->addTransition(MSG_ACTIVATE, s0, s1);
+    //sm->addTransition(MSG_ACTIVATE, s1, s1);
 
     return sm;
 }
 
 StateMachine* buildDummyAutomaton(MessageType msgId)
 {
-    StateMachine* sm = new StateMachine();
+    StateMachine* sm = new StateMachine("dummy");
     StateActions* a = new LogActions(std::string("I received a message from a remote automaton"));
     State* s0 = new State(string("initial"), a);
     sm->addState(s0);

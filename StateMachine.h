@@ -41,8 +41,9 @@ protected:
     vector<State*> states;
     int initialState = 0;
     MessagePool* pool;
+    string name;
 public:
-    StateMachine();
+    StateMachine(string n);
     virtual ~StateMachine();
 
     bool addState(State* s);
@@ -57,6 +58,8 @@ public:
     virtual void reportMessage(MessageType msgId);
 
     MessagePool* getPool();
+
+    string getName() { return name; }
 };
 
 /**
@@ -115,6 +118,8 @@ public:
     bool existsTransition(MessageType id);
 
     State* next(MessageType id);
+
+    string getName() {  return name; }
 
     StateActions* getActions()  { return actions; }
 

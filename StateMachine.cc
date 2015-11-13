@@ -16,7 +16,7 @@ using namespace std;
 
 namespace inet {
 
-StateMachine::StateMachine() {
+StateMachine::StateMachine(string n): name(n) {
     pool = new MessagePool();
 }
 

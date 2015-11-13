@@ -84,15 +84,12 @@ class INET_API GossipPush : public ApplicationBase, public ITimeOutProducer
 
     // control messages
     cMessage* ctrlMsg0 = nullptr;
-    cMessage* ctrlMsg1 = nullptr;
-    cMessage* ctrlHello = nullptr;
 
     // myself as a module
     string myself;
     L3Address myAddress;
 
     // a state machine
-    StateMachine* anotherSM;
     StateMachine* sm_tick_gossip;
     StateMachine* sm_tick_new_gossip;
     StateMachine* sm_tick_hello;
@@ -127,7 +124,7 @@ class INET_API GossipPush : public ApplicationBase, public ITimeOutProducer
     bool processReceivedGossip(cPacket* pkt);
     bool processReceivedHello(cPacket* pkt);
     bool isInfected()  { return !infections.empty(); }
-    void addNewAddress(string id, L3Address& addr);
+    void addNewAddress(string id);
     void addNewInfection(Gossip* g);
 private:
     static const int TICK_MESSAGE = 456;
