@@ -90,6 +90,8 @@ void GossipPush::handleMessageWhenUp(cMessage *msg)
     else if (msg->getKind() == UDP_I_DATA) {
         pkt = PK(msg);
 
+        EV_TRACE << "A network message\n";
+
         bool done = processReceivedGossip(pkt);
         done = done || processReceivedHello(pkt);
 
@@ -145,6 +147,15 @@ bool GossipPush::sayHello()
 {
     // EV_TRACE << myself << " is saying hello" << endl;
     // FIXME: Figure out how to do a real broadcast
+
+//    if (isSource) {
+//
+//    GossipHello* pkt = new GossipHello("Hello");
+//    pkt->setId(myself.c_str());
+//    socket.sendTo(pkt, IPv4Address::ALLONES_ADDRESS, destinationPort);
+//
+//    }
+
     for ( L3Address& addr : possibleNeighbors ) {
         GossipHello* pkt = new GossipHello("Hello");
         pkt->setId(myself.c_str());
@@ -241,8 +252,8 @@ void GossipPush::processStart()
     }
 
     socket.setOutputGate(gate("udpOut"));
-    //socket.setBroadcast(true);
     socket.bind(localPort);
+    socket.setBroadcast(true);
 
 
     EV_TRACE << "Creating State Machines\n";
